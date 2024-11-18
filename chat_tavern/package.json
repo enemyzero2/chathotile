@@ -5,9 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc && vite build",
-    "electron:dev": "electron .",
-    "electron:build": "vite build && electron-builder",
+    "build": "vue-tsc --noEmit && vite build",
+    "electron:dev": "vite dev & electron .",
+    "electron:build": "vue-tsc --noEmit && vite build && electron-builder",
+    "electron:serve": "electron .",
     "preview": "vite preview",
     "build-only": "vite build",
     "type-check": "vue-tsc --build --force",
@@ -44,18 +45,20 @@
   },
   "main": "src/main/index.js",
   "build": {
-    "appId": "com.your-app.id",
-    "productName": "Your App Name",
+    "appId": "com.chat.tavern",
+    "productName": "Chat Tavern",
     "directories": {
-      "output": "dist_electron"
-    },
-    "win": {
-      "target": "nsis"
+      "output": "release"
     },
     "files": [
       "dist/**/*",
+      "dist-electron/**/*",
       "src/main/**/*"
-    ]
+    ],
+    "asar": true,
+    "win": {
+      "target": ["nsis"]
+    }
   },
   "description": "Chat Tavern Application",
   "author": {

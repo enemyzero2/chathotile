@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHashHistory } from 'vue-router'
 import Chat from '../views/Chat.vue'
 import UserSettings from '../views/usersettings.vue'
 
@@ -16,8 +16,8 @@ const routes = [
 ]
 
 const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHashHistory(),
   routes
-})
+});
 
 export default router

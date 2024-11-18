@@ -1,60 +1,69 @@
-'use strict'
+import { app, BrowserWindow } from 'electron';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-import { app, BrowserWindow, ipcMain } from 'electron'
-import * as path from 'path'
-import { format as formatUrl } from 'url'
+// 为 ES 模块获取 __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-const isDevelopment = process.env.NODE_ENV !== 'production'
-
-// 保持window对象的全局引用，避免JavaScript对象被垃圾回收时，窗口被自动关闭
-let mainWindow
-
-function createMainWindow() {
-  const window = new BrowserWindow({
-    width: 1024,
-    height: 768,
+function createWindow() {
+  const win = new BrowserWindow({
+    width: 800,
+    height: 600,
     webPreferences: {
       nodeIntegration: true,
-      contextIsolation: false
+      contextIsolation: false,
+      webSecurity: false,
+      allowRunningInsecureContent: true,
+      preload: path.join(__dirname, 'preload.js')
     }
-  })
+  });
 
-  if (isDevelopment) {
-    // 开发环境下加载本地服务器
-    window.loadURL(`http://localhost:8080`)
-    window.webContents.openDevTools()
+  win.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [
+          "default-src 'self' 'unsafe-inline' 'unsafe-eval' file: data: http: https:;"
+        ]
+      }
+    });
+  });
+
+  if (process.env.NODE_ENV === 'development') {
+    win.loadURL('http://localhost:5173')
   } else {
-    // 生产环境下加载打包后的文件
-    window.loadURL(formatUrl({
-      pathname: path.join(__dirname, 'index.html'),
-      protocol: 'file',
-      slashes: true
-    }))
+    const filePath = path.join(app.getAppPath(), 'dist/index.html')
+    console.log('Loading file from:', filePath)
+    console.log('__dirname is:', __dirname)
+    
+    win.loadFile(filePath)
+    
+    win.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+      console.error('Failed to load:', errorCode, errorDescription)
+      console.error('Attempted path:', filePath)
+    })
   }
 
-  window.on('closed', () => {
-    mainWindow = null
-  })
-
-  return window
+  win.webContents.openDevTools()
 }
 
-// 当Electron完成初始化时被调用
-app.on('ready', () => {
-  mainWindow = createMainWindow()
+app.whenReady().then(() => {
+  createWindow()
 })
 
-// 当所有窗口被关闭时退出应用
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit()
+app.on('window-all-closed',()=>{
+  if(process.platform !== 'darwin'){
+    app.quit();
   }
-})
+});
 
-app.on('activate', () => {
-  // 在macOS上，当dock图标被点击并且没有其他窗口打开时，
-  // 通常在应用程序中重新创建一个窗口
-  if (mainWindow === null) {
-    mainWindow = createMainWindow()
-  }
-})
+app.on('activate',()=>{
+  if(BrowserWindow.getAllWindows().length === 0) createWindow();
+});
+
+
+
+
+
+
