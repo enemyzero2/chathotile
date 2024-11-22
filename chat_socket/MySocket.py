@@ -55,11 +55,6 @@ def connect_socket(sockfd: int, server_addr: tuple[str,int], sockaddr_len: int):
     if result == -1:
         error_code = ws2_32.WSAGetLastError()
         error_msg = {
-            10013: "权限不足。尝试使用管理员权限运行或使用大于1024的端口",
-            10048: "地址已被使用。该端口可能已经被其他程序占用",
-            10049: "请求的地址无法分配给该主机",
-            10022: "参数无效。请检查地址格式是否正确",
-            10047: "地址族不支持。请检查地址族是否正确",
             10061: "连接被拒绝。目标服务器可能未启动或端口未开放"
         }.get(error_code, f"未知错误")
         

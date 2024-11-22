@@ -13,11 +13,20 @@ def main():
     try:
         # 发送消息
         message = "你好，服务器！"
-        send_socket(client_sock, message.encode('utf-8'), len(message), 0)
+        message_bytes = message.encode('utf-8')
+        total_sent = 0
+        while total_sent < len(message_bytes):
+            sent = send_socket(client_sock, message_bytes[total_sent:], 
+                             len(message_bytes) - total_sent, 0)
+            total_sent += sent
         
         # 接收响应
         response = recv_socket(client_sock, 1024, 0)
-        print(f"服务器响应: {response.decode('utf-8')}")
+        try:
+            decoded_response = response.decode('utf-8')
+            print(f"服务器响应: {decoded_response}")
+        except UnicodeDecodeError:
+            print(f"服务器响应(原始字节): {response}")
         
     finally:
         # 关闭连接

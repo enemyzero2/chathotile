@@ -19,7 +19,7 @@ def main():
         print("服务器启动，等待连接...")
         
         # 接受客户端连接
-        client_sock, client_addr = accept_socket(server_sock, ("127.0.0.1", 8887), 16)
+        client_sock, client_addr = accept_socket(server_sock, ("127.0.0.1", 8888), 16)
         print(f"客户端{client_addr}已连接")
         
         while True:
