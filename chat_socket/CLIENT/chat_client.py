@@ -1,4 +1,4 @@
-from MySocket import *
+from SOCKET_API.MySocket import *
 import json
 import threading
 from typing import Callable
@@ -83,7 +83,28 @@ class ChatClient:
         
     def disconnect(self):
         """断开与服务器的连接"""
+        if not self.running:  # 避免重复断开连接
+            return
+            
+        try:
+            # 首先发送登出消息
+            if self.sock:
+                self._send_message({
+                    'type': 'logout',
+                    'content': self.username
+                })
+        except Exception as e:
+            print(f"发送登出消息失败: {e}")
+        
+        # 然后设置运行状态为False
         self.running = False
+        
+        # 最后关闭socket
         if self.sock:
-            close_socket(self.sock)
+            try:
+                close_socket(self.sock)
+            except Exception as e:
+                print(f"关闭socket失败: {e}")
+            self.sock = None
+            
         cleanup_winsock() 

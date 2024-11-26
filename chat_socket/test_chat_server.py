@@ -1,4 +1,4 @@
-import chat_server
+import SERVER.chat_server as chat_server
 import time 
 def main():
     server = chat_server.ChatServer()

@@ -1,5 +1,5 @@
-import chat_client
 import time
+import CLIENT.chat_client as chat_client
 
 def message_handler(message):
     """处理接收到的消息"""
@@ -26,8 +26,8 @@ def main():
                 client.send_message(message)
             
             # 保持程序运行一段时间以接收消息
-            while True:
-                time.sleep(0.1)
+            #while True:
+            #   time.sleep(0.1)
                 
         except KeyboardInterrupt:
             print("\n正在断开连接...")

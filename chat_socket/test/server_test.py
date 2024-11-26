@@ -1,4 +1,4 @@
-from MySocket import *
+from chat_socket.SOCKET_API.MySocket import *
 
 def main():
     server_sock = None

@@ -1,4 +1,4 @@
-from MySocket import *
+from SOCKET_API.MySocket import *
 from typing import Dict, Set
 import json
 import threading
@@ -11,6 +11,8 @@ class ChatServer:
         self.clients: Dict[int, tuple[str, int]] = {}  # socket_fd -> (ip, port)
         self.usernames: Dict[int, str] = {}  # socket_fd -> username
         self.running = False
+        self.current_client_sock_num = None
+        self.current_client_count = 0  # 添加客户端计数器
         
     def start(self):
         """启动聊天服务器"""
@@ -38,6 +40,7 @@ class ChatServer:
             try:
                 client_sock, client_addr = accept_socket(self.server_sock, (self.host, self.port), 16)
                 self.clients[client_sock] = client_addr
+                self.current_client_count += 1  # 增加客户端计数
                 
                 # 为每个客户端启动一个处理线程
                 client_thread = threading.Thread(target=self._handle_client, args=(client_sock,))
@@ -48,6 +51,9 @@ class ChatServer:
                 
     def _handle_client(self, client_sock: int):
         """处理客户端消息"""
+        if self.current_client_count <= 0:  # 检查客户端数量
+            return
+            
         client_addr = self.clients.get(client_sock, ('未知', 0))
         username = self.usernames.get(client_sock, '未知用户')
         
@@ -81,6 +87,7 @@ class ChatServer:
                         
                 except Exception as e:
                     print(f"接收消息失败 - 客户端 {username}({client_addr[0]}:{client_addr[1]}): {e}")
+                    break
                 
         except Exception as e:
             print(f"处理客户端 {username}({client_addr[0]}:{client_addr[1]}) 时发生错误: {e}")
@@ -108,6 +115,13 @@ class ChatServer:
                 'sender': username,
                 'content': content
             }, exclude=None)
+        elif msg_type == 'logout':
+            username = self.usernames.get(client_sock, '未知用户')
+            self._broadcast({
+                'type': 'system',
+                'content': f"{username} 离开了聊天室"
+            }, exclude=None)
+            self._remove_client(client_sock)
             
     def _broadcast(self, message: dict, exclude: int = None):
         """广播消息给所有客户端"""
@@ -132,6 +146,7 @@ class ChatServer:
             del self.clients[client_sock]
         if client_sock in self.usernames:
             del self.usernames[client_sock]
+        self.current_client_count -= 1  # 减少客户端计数
         close_socket(client_sock)
         
     def stop(self):
