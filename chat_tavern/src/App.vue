@@ -27,27 +27,36 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import axios from 'axios'
-
-const API_BASE_URL = 'http://localhost:3000/api'
-
+import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { appApi } from './api/APP'
 import {
   UserIcon,
   MessageSquareIcon,
   UsersIcon,
   FolderIcon,
-  SearchIcon,
-  MoreVerticalIcon,
-  SmileIcon,
-  ImageIcon,
-  FileIcon
 } from 'lucide-vue-next'
 
+onMounted(async () => {
+  try {
+    await appApi.initChatClient()
+    console.log('聊天客户端初始化成功')
+  } catch (error) {
+    console.error('聊天客户端初始化失败:', error)
+  }
+})
 
-onMounted(() => {
+onBeforeUnmount(async () => {
+  try {
+    await appApi.closeChatClient()
+    console.log('聊天客户端关闭成功')
+  } catch (error) {
+    console.error('聊天客户端关闭失败:', error)
+  }
 })
 </script>
 
 <style>
+body {
+  font-family: 'SimSun', 'STSong', '宋体', serif;
+}
 </style>

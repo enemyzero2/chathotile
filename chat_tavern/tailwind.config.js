@@ -5,7 +5,11 @@ export default {
     "./src/**/*.{vue,js,ts,jsx,tsx}",
   ],
   theme: {
-    extend: {},
+    extend: {
+      fontFamily: {
+      song: ['SimSun', 'STSong', '宋体', 'serif'],
+      },
+    },
   },
   plugins: [],
 }

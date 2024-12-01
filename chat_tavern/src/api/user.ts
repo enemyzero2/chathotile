@@ -1,23 +1,33 @@
 import axios from 'axios'
 
-const API_BASE_URL = 'http://your-api-base-url'
+const api = axios.create({
+  baseURL: 'http://127.0.0.1:8082'
+})
+
+// 用户信息接口
+export interface UserInfo {
+  id?: number
+  name: string
+  background?: string
+  avatar?: string
+  createdAt?: string
+}
+
+// 用户资料更新接口
+export interface UserProfileData {
+  name: string
+  background: string
+}
 
 export const userApi = {
   // 获取用户信息
-  getUserInfo: () => axios.get(`${API_BASE_URL}/user/info`),
-  
-  // 更新用户信息
-  updateUserInfo: (data: {
-    nickname: string,
-    darkMode: boolean
-  }) => axios.put(`${API_BASE_URL}/user/update`, data),
-  
-  // 更新头像
-  updateAvatar: (formData: FormData) => axios.post(
-    `${API_BASE_URL}/user/avatar`,
-    formData,
-    {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    }
-  )
-} 
+  getUserInfo() {
+    return api.get<UserInfo>('/user/info')
+  },
+
+  // 保存用户资料
+  saveProfile(data: UserProfileData) {
+    return api.post<{ message: string }>('/user/profile', data)
+  }
+}
+
