@@ -11,6 +11,21 @@ export default {
       },
     },
   },
-  plugins: [],
+  plugins: [
+    require('daisyui'),
+  ],
+  daisyui: {
+    themes: [
+      "retro",
+      "light",
+      "dark",
+      "cupcake",
+      "bumblebee",
+      "emerald",
+      "corporate",
+      "synthwave",
+      "cyberpunk"
+    ],
+  }
 }
 

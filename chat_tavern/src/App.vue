@@ -1,24 +1,46 @@
 <template>
-  <container class="flex min-h-screen max-w-[1920px] mx-auto bg-gray-100">
+  <container class="flex min-h-screen max-w-[1920px] mx-auto bg-base-100">
     <!-- 左侧导航栏 -->
-    <div class="min-w-20 bg-gray-900 flex flex-col items-center py-4">
+    <div class="min-w-20 bg-base-300 flex flex-col items-center py-4">
       <!-- 用户头像 -->
-      <router-link to="/settings" class="w-12 h-12 rounded-full bg-gray-700 mb-8 flex items-center justify-center">
-        <UserIcon class="text-gray-300" :size="24" />
+      <router-link to="/settings" class="avatar placeholder mb-8">
+        <div class="w-12 rounded-full bg-neutral text-neutral-content">
+          <UserIcon :size="24" />
+        </div>
       </router-link>
       
       <!-- 导航按钮 -->
       <nav class="space-y-10 flex flex-col items-center">
-        <router-link to="/" class="p-3 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white">
+        <router-link 
+          to="/" 
+          class="btn btn-ghost btn-circle"
+          :class="{ 'btn-active': $route.path === '/' }"
+        >
           <MessageSquareIcon :size="20" />
         </router-link>
-        <button class="p-3 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white">
+        <button class="btn btn-ghost btn-circle">
           <UsersIcon :size="20" />
         </button>
-        <button class="p-3 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white">
+        <button class="btn btn-ghost btn-circle">
           <FolderIcon :size="20" />
         </button>
       </nav>
+
+      <!-- 主题切换按钮，放在底部 -->
+      <select 
+        class="select select-bordered select-sm mt-auto"
+        data-choose-theme
+      >
+        <option value="retro">复古</option>
+        <option value="light">明亮</option>
+        <option value="dark">深色</option>
+        <option value="cupcake">粉彩</option>
+        <option value="bumblebee">蜜蜂</option>
+        <option value="emerald">翠绿</option>
+        <option value="corporate">商务</option>
+        <option value="synthwave">赛博</option>
+        <option value="cyberpunk">朋克</option>
+      </select>
     </div>
 
     <!-- 路由出口 -->
