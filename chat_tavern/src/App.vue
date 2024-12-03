@@ -51,6 +51,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { appApi } from './api/APP'
+import { themeChange } from 'theme-change'
 import {
   UserIcon,
   MessageSquareIcon,
@@ -59,6 +60,7 @@ import {
 } from 'lucide-vue-next'
 
 onMounted(async () => {
+  themeChange(false)
   try {
     await appApi.initChatClient()
     console.log('聊天客户端初始化成功')
