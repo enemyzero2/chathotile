@@ -126,6 +126,8 @@ import {
   ImageIcon,
   FileIcon
 } from 'lucide-vue-next'
+import { getDeviceId } from '../utils/deviceId'
+import { useWebSocketStore } from '../stores/websocket'
 
 const chats = ref<Chat[]>([])
 const messages = ref<Message[]>([])
@@ -136,10 +138,12 @@ const wsClient = new WebSocketClient()
 const router = useRouter()
 const loading = ref(true)
 const showError = ref(false)
-
+const deviceId = ref('')
+const wsStore = useWebSocketStore()
 
 
 const handleNewMessage = (event: CustomEvent) => {
+  console.log('Chat: 收到新消息', event.detail)
   const message = event.detail
   if(message.chatId === selectedChat.value?.id) {
     messages.value.push(message)
@@ -147,6 +151,7 @@ const handleNewMessage = (event: CustomEvent) => {
 }
 
 const handleWsError = () => {
+  console.log('Chat: WebSocket连接错误')
   showError.value = true
   loading.value = false
 }
@@ -156,45 +161,62 @@ const handleChatList = (event: CustomEvent<Chat[]>) => {
 }
 
 onMounted(async () => {
+  console.log('Chat: 组件挂载')
   try {
-    const { data } = await userApi.getUserInfo()
-    if(!data?.name) {
+    console.log('Chat: 开始获取用户信息')
+    const response = await userApi.getUserInfo()
+    console.log('Chat: 获取到用户信息', response.data.data)
+    
+    if(!response.data.data?.name) {
+      console.log('Chat: 未找到用户名，跳转到设置页面')
       router.push('/settings')
       return
     }
 
-    username.value = data.name
-    wsClient.connect(username.value)
+    deviceId.value = getDeviceId()
+    console.log('Chat: 生成设备ID', deviceId.value)
     
+    username.value = response.data.data.name
+    console.log('Chat: 设置用户名', username.value)
+    
+    // 使用 store 中的 WebSocket
+    if (!wsStore.isConnected) {
+      console.log('Chat: WebSocket未连接，开始连接')
+      wsStore.connect(deviceId.value)
+    } else {
+      console.log('Chat: WebSocket已连接')
+    }
+    wsStore.wsClient.requestChatList()
+    console.log('Chat: 添加事件监听器')
     window.addEventListener('chat-message', handleNewMessage as EventListener)
     window.addEventListener('chat-list', handleChatList as EventListener)
     window.addEventListener('ws-error', handleWsError as EventListener)
     
     loading.value = false
+    console.log('Chat: 初始化完成')
   } catch (error) {
-    console.error('获取用户信息失败:', error)
+    console.error('Chat: 获取用户信息失败', error)
     showError.value = true
     loading.value = false
   }
 })
 
 onUnmounted(() => {
-  wsClient.close()
+  console.log('Chat: 组件卸载')
+  console.log('Chat: 移除事件监听器')
   window.removeEventListener('chat-message', handleNewMessage as EventListener)
   window.removeEventListener('chat-list', handleChatList as EventListener)
   window.removeEventListener('ws-error', handleWsError as EventListener)
 })
 
 const sendMessage = () => {
-  if (!newMessage.value.trim()) {
-    console.log('消息为空, 发送失败')
+  if (!newMessage.value.trim() || !selectedChat.value?.id) {
+    console.log('消息为空或未选择聊天室, 发送失败')
     return
   }
-  if(!selectedChat.value?.id) {
-    console.log('未选择聊天, 发送失败')
-    return
-  }
-  wsClient.sendMessage(newMessage.value, selectedChat.value.id)
+  
+  // 使用 store 中的 WebSocket 客户端发送消息
+  wsStore.wsClient.sendMessage(newMessage.value, selectedChat.value.id)
   newMessage.value = ''
 }
 
@@ -203,14 +225,11 @@ const retryEnter = async () => {
   loading.value = true
   
   try {
-    const { data } = await userApi.getUserInfo()
-    if(!data?.name) {
-      router.push('/settings')
-      return
-    }
+    const response = await userApi.getUserInfo()
+    
 
-    username.value = data.name
-    wsClient.connect(username.value)
+    username.value = response.data.data.name
+    wsStore.connect(deviceId.value)
     window.addEventListener('chat-message', handleNewMessage as EventListener)
     loading.value = false
   } catch (error) {

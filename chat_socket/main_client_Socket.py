@@ -1,4 +1,4 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from CLIENT.chat_client import ChatClient
 from MODELS import Message, Chat, UserProfileData
@@ -10,6 +10,16 @@ from datetime import datetime
 import json
 import uvicorn
 import logging
+
+from MODELS.models import UserProfileUpdateData
+
+user_data_test = {
+    "id": 1,
+    "name": "someiyoshino",
+    "background": "这是一个测试用户",
+    "avatar": None,
+    "createdAt": datetime.now().isoformat()
+}
 
 app = FastAPI()
 
@@ -258,18 +268,50 @@ async def websocket_endpoint(websocket: WebSocket, username: str):
 @app.get("/user/info")
 async def get_user_info():
     """获取用户信息"""
-    return {
-        "id": 1,
-        "name": "测试用户",
-        "background": "这是一个测试用户",
-        "avatar": None,
-        "createdAt": datetime.now().isoformat()
-    }
+    logger.info("获取用户信息请求")
+    try:
+        if not user_data_test:
+            logger.warning("用户数据为空")
+            raise HTTPException(status_code=404, detail="未找到用户数据")
+            
+        logger.debug(f"返回用户信息: {user_data_test}")
+        return {
+            "code": 200,
+            "message": "success",
+            "data": user_data_test
+        }
+    except Exception as e:
+        logger.error(f"获取用户信息失败: {e}", exc_info=True)
+        return {
+            "code": 500,
+            "message": str(e),
+            "data": None
+        }
 
 @app.post("/user/profile")
-async def save_user_profile(data: UserProfileData):
+async def save_user_profile(data: UserProfileUpdateData):
     """保存用户资料"""
-    return {"message": "资料保存成功"}
+    logger.info(f"接收到用户资料更新请求: {data}")
+    try:
+        # 更新用户数据
+        global user_data_test
+        user_data_test.update({
+            "name": data.name,
+            "background": data.background,
+        })
+        logger.info(f"用户资料更新成功: {user_data_test}")
+        return {
+            "code": 200,
+            "message": "资料保存成功",
+            "data": user_data_test
+        }
+    except Exception as e:
+        logger.error(f"保存用户资料失败: {e}", exc_info=True)
+        return {
+            "code": 500,
+            "message": str(e),
+            "data": None
+        }
 
 # 添加新的API端点
 @app.get("/chats")

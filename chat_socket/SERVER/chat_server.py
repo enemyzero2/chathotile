@@ -205,21 +205,40 @@ class ChatServer:
                     
     def _remove_client(self, client_sock: int):
         """移除断开连接的客户端"""
-        username = self.usernames.get(client_sock)
-        if username:
+        if client_sock not in self.clients:
+            logger.debug(f"客户端 {client_sock} 已经被移除")
+            return
+            
+        try:
+            username = self.usernames.get(client_sock, str(client_sock))
             logger.info(f"移除客户端 {username}")
+            
+            # 广播用户离开消息
             self._broadcast({
                 'type': 'system',
                 'content': f"{username} 离开了聊天室"
             }, exclude=client_sock)
             
-        if client_sock in self.clients:
-            del self.clients[client_sock]
-        if client_sock in self.usernames:
-            del self.usernames[client_sock]
-        self.current_client_count -= 1
-        logger.debug(f"当前连接数: {self.current_client_count}")
-        close_socket(client_sock)
+            # 移除客户端信息
+            if client_sock in self.clients:
+                del self.clients[client_sock]
+            if client_sock in self.usernames:
+                del self.usernames[client_sock]
+                
+            self.current_client_count = max(0, len(self.clients))  # 确保不会小于0
+            logger.debug(f"当前连接数: {self.current_client_count}")
+            
+            # 尝试关闭socket
+            try:
+                close_socket(client_sock)
+            except OSError as e:
+                if "10038" in str(e):  # socket已关闭
+                    logger.debug(f"socket {client_sock} 已经关闭")
+                else:
+                    logger.warning(f"关闭socket {client_sock} 失败: {e}")
+                    
+        except Exception as e:
+            logger.error(f"移除客户端时出错: {e}", exc_info=True)
         
     def stop(self):
         """停止聊天服务器"""

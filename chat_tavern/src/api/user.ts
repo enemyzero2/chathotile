@@ -14,7 +14,7 @@ export interface UserInfo {
 }
 
 // 用户资料更新接口
-export interface UserProfileData {
+export interface UserProfileUpdateData {
   name: string
   background: string
 }
@@ -22,11 +22,11 @@ export interface UserProfileData {
 export const userApi = {
   // 获取用户信息
   getUserInfo() {
-    return api.get<UserInfo>('/user/info')
+    return api.get<{ data: UserInfo }>('/user/info')
   },
 
   // 保存用户资料
-  saveProfile(data: UserProfileData) {
+  saveProfile(data: UserProfileUpdateData) {
     return api.post<{ message: string }>('/user/profile', data)
   }
 }

@@ -19,5 +19,12 @@ class Message(BaseModel):
     isSelf: Optional[bool] = None
 
 class UserProfileData(BaseModel):
+    id: int
+    name: str
+    background: str
+    avatar: Optional[str] = None
+    createdAt: str
+
+class UserProfileUpdateData(BaseModel):
     name: str
     background: str
