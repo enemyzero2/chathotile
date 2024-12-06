@@ -1,9 +1,3 @@
-import axios from 'axios'
-
-const api = axios.create({
-  baseURL: 'http://127.0.0.1:8081'
-})
-
 export interface Chat {
   id: number
   name: string
@@ -13,10 +7,12 @@ export interface Chat {
 }
 
 export interface Message {
-  id: number
   content: string
-  isSelf: boolean
-  createdAt: string
+  sender: string
+  timestamp: string
+  type: 'message' | 'system'
+  chatId: number
+  isSelf?: boolean
 }
 
 export interface SendMessageData {
@@ -25,19 +21,74 @@ export interface SendMessageData {
   isSelf: boolean
 }
 
-export const chatApi = {
-  // 获取聊天列表
-  getChats() {
-    return api.get<Chat[]>('/chats')
-  },
 
-  // 获取指定聊天的消息记录
-  getChatMessages(chatId: number) {
-    return api.get<Message[]>(`/chats/${chatId}/messages`)
-  },
+// 添加 WebSocket 客户端
+export class WebSocketClient {
+  private ws: WebSocket | null = null
+  
+  connect(username: string) {
+    this.ws = new WebSocket(`ws://127.0.0.1:8082/ws/${username}`)
+    
+    this.ws.onopen = () => {
+      console.log('WebSocket连接成功')
+      this.requestChatList()
+    }
+    
+    this.ws.onmessage = (event) => {
+      const data = JSON.parse(event.data)
+      
+      // 处理不同类型的消息
+      switch(data.type) {
+        case 'chat_list':
+          // 触发聊天室列表更新事件
+          window.dispatchEvent(new CustomEvent('chat-list', { 
+            detail: data.chats as Chat[]
+          }))
+          break
+          
+        case 'message':
+          const message: Message = {
+            content: data.content,
+            sender: data.sender,
+            timestamp: new Date(data.timestamp).toLocaleTimeString(),
+            type: data.type,
+            chatId: data.chatId,
+            isSelf: false
+          }
+          window.dispatchEvent(new CustomEvent('chat-message', { detail: message }))
+          break
+      }
+    }
 
-  // 发送消息
-  sendMessage(data: SendMessageData) {
-    return api.post<Message>('/messages', data)
+    this.ws.onerror = () => {
+      window.dispatchEvent(new CustomEvent('ws-error'))
+    }
+  }
+  
+  // 请求聊天室列表
+  requestChatList() {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({
+        type: 'request_chat_list'
+      }))
+    }
+  }
+  
+  sendMessage(content: string, chatId: number) {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      const message: Message = {
+        content,
+        chatId,
+        sender: '', // 由服务器设置
+        timestamp: new Date().toISOString(),
+        type: 'message',
+        isSelf: true
+      }
+      this.ws.send(JSON.stringify(message))
+    }
+  }
+  
+  close() {
+    this.ws?.close()
   }
 } 

@@ -1,3 +1,4 @@
-from .models import Chat, Message, SendMessageData
+from .models import Chat, Message, UserProfileData
 
-__all__ = ["Chat", "Message", "SendMessageData"]
+__all__ = ["Chat", "Message", "UserProfileData"]
+

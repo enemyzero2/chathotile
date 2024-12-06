@@ -2,7 +2,7 @@
   <div class="min-h-screen w-full bg-base-200 flex items-center justify-center p-4">
     <div class="card w-full max-w-xl bg-base-100 shadow-xl">
       <div class="card-body">
-        <h1 class="card-title text-3xl font-bold text-base-content text-center font-song">酒馆旅客登记簿</h1>
+        <h1 class="card-title text-3xl font-bold text-base-content text-center font-song ">酒馆旅客登记簿</h1>
         <form @submit.prevent="saveProfile" class="space-y-6">
           <div class="form-control">
             <label class="label">

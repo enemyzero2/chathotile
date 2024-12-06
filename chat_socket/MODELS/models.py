@@ -2,20 +2,22 @@ from pydantic import BaseModel
 from datetime import datetime
 from typing import Optional
 
-class Message(BaseModel):
-    id:int
-    content:str
-    isSelf:bool
-    createdAt:str
-
+# 定义数据模型
 class Chat(BaseModel):
-    id:int
-    name:str
-    lastMessage:str
-    time:str
-    members:str | None = None
+    id: int
+    name: str
+    lastMessage: str
+    time: str
+    members: Optional[str] = None
 
-class SendMessageData(BaseModel):
-    chatId:int
-    content:str
-    isSelf:bool
+class Message(BaseModel):
+    content: str
+    sender: str
+    timestamp: str
+    type: str  # 'message' | 'system'
+    chatId: int
+    isSelf: Optional[bool] = None
+
+class UserProfileData(BaseModel):
+    name: str
+    background: str

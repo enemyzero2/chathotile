@@ -1,5 +1,5 @@
 <template>
-  <container class="flex min-h-screen max-w-[1920px] mx-auto bg-base-100">
+  <div class="container flex min-h-screen max-w-[1920px] mx-auto bg-base-100">
     <!-- 左侧导航栏 -->
     <div class="min-w-20 bg-base-300 flex flex-col items-center py-4">
       <!-- 用户头像 -->
@@ -45,7 +45,7 @@
 
     <!-- 路由出口 -->
     <router-view></router-view>
-  </container>
+  </div>
 </template>
 
 <script setup lang="ts">

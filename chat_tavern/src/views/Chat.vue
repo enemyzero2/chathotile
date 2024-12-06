@@ -1,4 +1,22 @@
 <template>
+  <div v-if="loading || showError" class="fixed inset-0 z-50 backdrop-blur-sm flex items-center justify-center bg-base-200/30">
+    <div class="card bg-base-100 shadow-xl p-8 flex flex-col items-center">
+      <div v-if="loading" class="card flex flex-col items-center">
+        <span class="loading loading-spinner loading-lg text-primary"></span>
+        <p class="mt-4 text-base-content/70">正在进入酒馆...</p>
+      </div>
+      
+      <div v-if="showError" class="alert alert-error shadow-lg">
+        <div class="flex flex-col items-center gap-2">
+          <div class="flex items-center">
+            <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            <span class="ml-2">啊哦~ 进入酒馆失败了</span>
+          </div>
+          <button class="btn btn-sm btn-outline" @click="retryEnter">再试一次吧</button>
+        </div>
+      </div>
+    </div>
+  </div>
   <div class="flex-1 flex">
     <!-- 聊天列表 -->
     <div class="w-80 bg-base-200 border-r border-base-300">
@@ -49,7 +67,7 @@
       <div class="card-body flex-1 overflow-y-auto p-6 space-y-4">
         <div
           v-for="message in messages"
-          :key="message.id"
+          :key="message.timestamp"
           class="chat"
           :class="message.isSelf ? 'chat-end' : 'chat-start'"
         >
@@ -75,6 +93,7 @@
             <FileIcon :size="20" class="text-base-content" />
           </button>
         </div>
+        
         <div class="join w-full">
           <input
             v-model="newMessage"
@@ -96,9 +115,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { themeChange } from 'theme-change'
-import { chatApi, type Chat, type Message } from '../api/chat'
+import { ref, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { WebSocketClient, type Chat, type Message } from '../api/chat'
+import { userApi, type UserInfo } from '../api/user'
 import {
   SearchIcon,
   MoreVerticalIcon,
@@ -111,49 +131,96 @@ const chats = ref<Chat[]>([])
 const messages = ref<Message[]>([])
 const selectedChat = ref<Chat | null>(null)
 const newMessage = ref('')
+const username = ref('')
+const wsClient = new WebSocketClient()
+const router = useRouter()
+const loading = ref(true)
+const showError = ref(false)
 
-const fetchChats = async () => {
-  try {
-    const { data } = await chatApi.getChats()
-    chats.value = data
-  } catch (error) {
-    console.error('获取聊天列表失败:', error)
+
+
+const handleNewMessage = (event: CustomEvent) => {
+  const message = event.detail
+  if(message.chatId === selectedChat.value?.id) {
+    messages.value.push(message)
   }
 }
 
-const fetchMessages = async (chatId: number) => {
+const handleWsError = () => {
+  showError.value = true
+  loading.value = false
+}
+
+const handleChatList = (event: CustomEvent<Chat[]>) => {
+  chats.value = event.detail
+}
+
+onMounted(async () => {
   try {
-    const { data } = await chatApi.getChatMessages(chatId)
-    messages.value = data
+    const { data } = await userApi.getUserInfo()
+    if(!data?.name) {
+      router.push('/settings')
+      return
+    }
+
+    username.value = data.name
+    wsClient.connect(username.value)
+    
+    window.addEventListener('chat-message', handleNewMessage as EventListener)
+    window.addEventListener('chat-list', handleChatList as EventListener)
+    window.addEventListener('ws-error', handleWsError as EventListener)
+    
+    loading.value = false
   } catch (error) {
-    console.error('获取消息记录失败:', error)
+    console.error('获取用户信息失败:', error)
+    showError.value = true
+    loading.value = false
   }
+})
+
+onUnmounted(() => {
+  wsClient.close()
+  window.removeEventListener('chat-message', handleNewMessage as EventListener)
+  window.removeEventListener('chat-list', handleChatList as EventListener)
+  window.removeEventListener('ws-error', handleWsError as EventListener)
+})
+
+const sendMessage = () => {
+  if (!newMessage.value.trim()) {
+    console.log('消息为空, 发送失败')
+    return
+  }
+  if(!selectedChat.value?.id) {
+    console.log('未选择聊天, 发送失败')
+    return
+  }
+  wsClient.sendMessage(newMessage.value, selectedChat.value.id)
+  newMessage.value = ''
 }
 
-const selectChat = async (chat: Chat) => {
-  selectedChat.value = chat
-  await fetchMessages(chat.id)
-}
-
-const sendMessage = async () => {
-  if (!newMessage.value.trim() || !selectedChat.value) return
+const retryEnter = async () => {
+  showError.value = false
+  loading.value = true
   
   try {
-    const messageData = {
-      chatId: selectedChat.value.id,
-      content: newMessage.value,
-      isSelf: true
+    const { data } = await userApi.getUserInfo()
+    if(!data?.name) {
+      router.push('/settings')
+      return
     }
-    
-    const { data } = await chatApi.sendMessage(messageData)
-    messages.value.push(data)
-    newMessage.value = ''
+
+    username.value = data.name
+    wsClient.connect(username.value)
+    window.addEventListener('chat-message', handleNewMessage as EventListener)
+    loading.value = false
   } catch (error) {
-    console.error('发送消息失败:', error)
+    console.error('获取用户信息失败:', error)
+    showError.value = true
+    loading.value = false
   }
 }
 
-onMounted(() => {
-  fetchChats()
-})
+const selectChat = (chat: Chat) => {
+  selectedChat.value = chat
+}
 </script> 
