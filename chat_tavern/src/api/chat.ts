@@ -26,8 +26,8 @@ export interface SendMessageData {
 export class WebSocketClient {
   private ws: WebSocket | null = null
   
-  connect(username: string) {
-    this.ws = new WebSocket(`ws://127.0.0.1:8082/ws/${username}`)
+  connect(id: string, username: string) {
+    this.ws = new WebSocket(`ws://127.0.0.1:8082/ws/${id}/${username}`)
     
     this.ws.onopen = () => {
       console.log('WebSocket连接成功')
@@ -53,9 +53,23 @@ export class WebSocketClient {
             timestamp: new Date(data.timestamp).toLocaleTimeString(),
             type: data.type,
             chatId: data.chatId,
-            isSelf: false
+            isSelf: data.isSelf
           }
           window.dispatchEvent(new CustomEvent('chat-message', { detail: message }))
+          break
+
+        case 'chat_messages':
+          const messages: Message[] = data.messages.map((msg: any) => ({
+            content: msg.content,
+            sender: msg.sender.username,
+            timestamp: new Date(msg.timestamp).toLocaleTimeString(),
+            type: msg.type,
+            chatId: msg.chatId,
+            isSelf: msg.sender.id === localStorage.getItem('userId')
+          }))
+          window.dispatchEvent(new CustomEvent('chat-messages', { 
+            detail: messages 
+          }))
           break
       }
     }
@@ -73,16 +87,22 @@ export class WebSocketClient {
       }))
     }
   }
+
+  requestChatMessages(chatId: number) {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({
+        type: 'request_chat_messages',
+        chatId
+      }))
+    }
+  }
   
   sendMessage(content: string, chatId: number) {
     if (this.ws?.readyState === WebSocket.OPEN) {
-      const message: Message = {
-        content,
-        chatId,
-        sender: '', // 由服务器设置
-        timestamp: new Date().toISOString(),
+      const message = {
         type: 'message',
-        isSelf: true
+        content,
+        chatId
       }
       this.ws.send(JSON.stringify(message))
     }

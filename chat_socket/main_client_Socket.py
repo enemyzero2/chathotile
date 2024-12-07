@@ -1,8 +1,8 @@
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from CLIENT.chat_client import ChatClient
 from MODELS import Message, Chat, UserProfileData
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 from pydantic import BaseModel
 import threading
 import asyncio
@@ -10,16 +10,10 @@ from datetime import datetime
 import json
 import uvicorn
 import logging
+from sqlalchemy.orm import Session
+from database import SessionLocal, ChatMember, Chat, Message, User
 
 from MODELS.models import UserProfileUpdateData
-
-user_data_test = {
-    "id": 1,
-    "name": "someiyoshino",
-    "background": "这是一个测试用户",
-    "avatar": None,
-    "createdAt": datetime.now().isoformat()
-}
 
 app = FastAPI()
 
@@ -44,39 +38,55 @@ class ConnectionManager:
         logger.info("初始化ConnectionManager")
         self.active_connections: Dict[str, WebSocket] = {}
         self.chat_clients: Dict[str, ChatClient] = {}
-        
-        # 初始化聊天室数据
-        self.chat_rooms: Dict[int, Chat] = {
-            1: Chat(
-                id=1,
-                name="公共聊天室",
-                type="group",
-                lastMessage="欢迎来到聊天室",
-                time=datetime.now().isoformat(),
-                unreadCount=0,
-                avatar=None
-            )
-        }
-        logger.info("默认聊天室已创建")
+        self.db = SessionLocal()
 
     async def send_chat_list(self, username: str):
-        """发送聊天室列表"""
+        """发送聊天列表"""
         if username in self.active_connections:
             try:
+                # 直接从数据库查询用户的聊天列表
+                chat_members = (self.db.query(ChatMember)
+                              .join(User, ChatMember.user_id == User.id)
+                              .filter(User.username == username)
+                              .all())
+                
+                chats = [{
+                    "id": member.chat.id,
+                    "name": member.chat.name,
+                    "type": member.chat.type,
+                    "avatar": member.chat.avatar,
+                    "last_message": member.chat.last_message,
+                    "last_message_time": member.chat.last_message_time.isoformat() if member.chat.last_message_time else None
+                } for member in chat_members]
+                
                 await self.active_connections[username].send_json({
                     'type': 'chat_list',
-                    'chats': [chat.dict() for chat in self.chat_rooms.values()]
+                    'chats': chats
                 })
                 logger.debug(f"已发送聊天列表给用户 {username}")
             except Exception as e:
                 logger.error(f"发送聊天列表失败: {e}", exc_info=True)
 
-    async def connect(self, websocket: WebSocket, username: str):
+    async def connect(self, websocket: WebSocket, username: str, id: str):
         """处理新的WebSocket连接"""
         logger.info(f"用户 {username} 正在尝试连接")
         await websocket.accept()
         self.active_connections[username] = websocket
         logger.info(f"用户 {username} WebSocket连接成功")
+        
+        # 获取或创建用户
+        user = self.db.query(User).filter(User.id == id).first()
+        if not user:
+            user = User(id=id, username=username)
+            self.db.add(user)
+            self.db.commit()
+        
+        # 更新最后登录时间
+        user.last_login = datetime.now()
+        self.db.commit()
+        
+        # 获取用户的聊天列表并发送
+        await self.send_chat_list(username)
         
         # 创建ChatClient实例
         client = ChatClient(host="127.0.0.1", port=8888)
@@ -104,19 +114,17 @@ class ConnectionManager:
                         else:
                             msg_data = content
                         
-                        chat_id = msg_data.get('chatId', 1)
+                        chat_id = message.get('chatId') or msg_data.get('chatId')
                         
-                        if chat_id in self.chat_rooms:
-                            self.chat_rooms[chat_id].lastMessage = msg_data.get('content', '')
-                            self.chat_rooms[chat_id].time = datetime.now().isoformat()
+                        await self.update_chat_message(chat_id, msg_data.get('content', ''))
                         
                         ws_message = {
                             'type': 'message',
-                            'content': msg_data.get('content', ''),
-                            'sender': username,
+                            'content': message.get('content', ''),
+                            'sender': message.get('sender', username),
                             'timestamp': datetime.now().isoformat(),
                             'chatId': chat_id,
-                            'isSelf': False
+                            'isSelf': message.get('isSelf', False)
                         }
                     
                     logger.debug(f"消息处理完成，发送响应: {ws_message}")
@@ -168,45 +176,128 @@ class ConnectionManager:
     async def create_chat(self, chat_data: dict) -> Chat:
         """创建新的聊天"""
         logger.info(f"正在创建新聊天: {chat_data}")
-        chat_id = len(self.chat_rooms) + 1
-        new_chat = Chat(
-            id=chat_id,
-            name=chat_data.get('name', f'聊天 {chat_id}'),
-            type=chat_data.get('type', 'private'),
-            lastMessage="",
-            time=datetime.now().isoformat(),
-            unreadCount=0,
-            avatar=chat_data.get('avatar')
-        )
-        self.chat_rooms[chat_id] = new_chat
-        logger.info(f"新聊天创建成功: {new_chat}")
-        return new_chat
+        try:
+            new_chat = Chat(
+                name=chat_data.get('name', '新的聊天'),
+                type=chat_data.get('type', 'private'),
+                avatar=chat_data.get('avatar'),
+                last_message="",
+                last_message_time=datetime.now()
+            )
+            self.db.add(new_chat)
+            self.db.flush()  # 获取新生成的ID
+            
+            # 创建聊天成员关系
+            if 'members' in chat_data:
+                for user_id in chat_data['members']:
+                    chat_member = ChatMember(
+                        id=f"cm_{new_chat.id}_{user_id}",
+                        chat_id=new_chat.id,
+                        user_id=user_id
+                    )
+                    self.db.add(chat_member)
+            
+            self.db.commit()
+            logger.info(f"新聊天创建成功: {new_chat.id}")
+            return new_chat
+        except Exception as e:
+            logger.error(f"创建聊天失败: {e}")
+            self.db.rollback()
+            raise
 
     async def get_chat(self, chat_id: int) -> Optional[Chat]:
         """获取特定聊天的信息"""
-        return self.chat_rooms.get(chat_id)
+        try:
+            return self.db.query(Chat).filter(Chat.id == chat_id).first()
+        except Exception as e:
+            logger.error(f"获取聊天信息失败: {e}")
+            return None
 
     async def update_chat(self, chat_id: int, data: dict):
         """更新聊天信息"""
-        if chat_id in self.chat_rooms:
-            chat = self.chat_rooms[chat_id]
-            for key, value in data.items():
-                if hasattr(chat, key):
-                    setattr(chat, key, value)
+        try:
+            chat = await self.get_chat(chat_id)
+            if chat:
+                for key, value in data.items():
+                    if hasattr(chat, key):
+                        setattr(chat, key, value)
+                self.db.commit()
+                logger.info(f"聊天 {chat_id} 更新成功")
+            else:
+                logger.warning(f"未找到聊天 {chat_id}")
+        except Exception as e:
+            logger.error(f"更新聊天失败: {e}")
+            self.db.rollback()
 
     async def delete_chat(self, chat_id: int):
         """删除聊天"""
-        if chat_id in self.chat_rooms:
-            del self.chat_rooms[chat_id]
+        try:
+            chat = await self.get_chat(chat_id)
+            if chat:
+                # 首先删除相关的聊天成员关系
+                self.db.query(ChatMember).filter(ChatMember.chat_id == chat_id).delete()
+                # 删除聊天消息
+                self.db.query(Message).filter(Message.chat_id == chat_id).delete()
+                # 删除聊天
+                self.db.delete(chat)
+                self.db.commit()
+                logger.info(f"聊天 {chat_id} 删除成功")
+            else:
+                logger.warning(f"未找到聊天 {chat_id}")
+        except Exception as e:
+            logger.error(f"删除聊天失败: {e}")
+            self.db.rollback()
+
+    async def update_chat_message(self, chat_id: int, message: str):
+        """更新聊天的最后消息"""
+        try:
+            chat = self.db.query(Chat).filter(Chat.id == chat_id).first()
+            if chat:
+                chat.last_message = message
+                chat.last_message_time = datetime.now()
+                self.db.commit()
+                logger.debug(f"已更新聊天 {chat_id} 的最后消息")
+        except Exception as e:
+            logger.error(f"更新聊天消息失败: {e}")
+            self.db.rollback()
+
+    async def get_chat_messages(self, chat_id: int, limit: int = 50) -> list:
+        """获取聊天消息历史"""
+        try:
+            messages = (self.db.query(Message)
+                       .filter(Message.chat_id == chat_id)
+                       .order_by(Message.created_at.desc())
+                       .limit(limit)
+                       .all())
+            logger.debug(f"获取聊天消息历史: {messages}")
+            
+            return [{
+                'id': msg.id,
+                'content': msg.content,
+                'sender': {
+                    'id': msg.sender.id,
+                    'username': msg.sender.username,
+                    'avatar': msg.sender.avatar
+                },
+                'timestamp': msg.created_at.isoformat(),
+                'type': msg.type,
+                'chatId': msg.chat_id,
+            } for msg in messages]
+        
+        except Exception as e:
+            logger.error(f"获取聊天消息失败: {e}", exc_info=True)
+            return []
 
 manager = ConnectionManager()
 
-@app.websocket("/ws/{username}")
-async def websocket_endpoint(websocket: WebSocket, username: str):
+@app.websocket("/ws/{id}/{username}")
+async def websocket_endpoint(websocket: WebSocket, id: str):
+    # 获取username by database
+    username = manager.db.query(User).filter(User.id == id).first().username
     logger.info(f"收到来自用户 {username} 的WebSocket连接请求")
     client = None
     try:
-        client = await manager.connect(websocket, username)
+        client = await manager.connect(websocket, username, id)
         if not client:
             logger.error(f"用户 {username} 连接失败")
             await websocket.close()
@@ -223,6 +314,14 @@ async def websocket_endpoint(websocket: WebSocket, username: str):
                 if data.get('type') == 'request_chat_list':
                     logger.info(f"用户 {username} 请求聊天列表")
                     await manager.send_chat_list(username)
+                    continue
+                elif data.get('type') == 'request_chat_messages':
+                    logger.info(f"用户 {username} 请求聊天消息")
+                    messages = await manager.get_chat_messages(data.get('chatId'), data.get('limit', 50))
+                    await websocket.send_json({
+                        'type': 'chat_messages',
+                        'messages': messages
+                    })
                     continue
                 elif data.get('type') == 'create_chat':
                     logger.info(f"用户 {username} 请求创建新聊天")
@@ -243,11 +342,10 @@ async def websocket_endpoint(websocket: WebSocket, username: str):
                 
                 # 更新聊天室最后消息
                 chat_id = message['chatId']
-                if chat_id in manager.chat_rooms:
-                    manager.chat_rooms[chat_id].lastMessage = message['content']
-                    manager.chat_rooms[chat_id].time = message['timestamp']
-                    logger.debug(f"更新聊天室 {chat_id} 的最后消息")
+                # 直接更新数据库中的最后消息
+                await manager.update_chat_message(chat_id, message['content'])
                 
+                # 发送消息到聊天服务器
                 client.send_message(json.dumps(message))
                 logger.debug(f"消息已发送到聊天服务器")
                 
@@ -265,90 +363,126 @@ async def websocket_endpoint(websocket: WebSocket, username: str):
             logger.info(f"清理用户 {username} 的连接")
             await manager.disconnect(username)
 
-@app.get("/user/info")
-async def get_user_info():
-    """获取用户信息"""
-    logger.info("获取用户信息请求")
+# 数据库依赖
+def get_db():
+    db = SessionLocal()
     try:
-        if not user_data_test:
-            logger.warning("用户数据为空")
-            raise HTTPException(status_code=404, detail="未找到用户数据")
-            
-        logger.debug(f"返回用户信息: {user_data_test}")
-        return {
-            "code": 200,
-            "message": "success",
-            "data": user_data_test
+        yield db
+    finally:
+        db.close()
+
+@app.get("/user/info")
+async def get_user_info(id: str, db: Session = Depends(get_db)):
+    """获取用户信息"""
+    logger.info(f"获取用户信息请求: {id}")
+    
+    user = db.query(User).filter(User.id == id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+        
+    return {
+        "code": 200,
+        "message": "success",
+        "data": {
+            "id": user.id,
+            "username": user.username or "",    
+            "background": user.background or "",
+            "avatar": user.avatar or "",
+            "created_at": user.created_at.isoformat() if user.created_at else None,
         }
-    except Exception as e:
-        logger.error(f"获取用户信息失败: {e}", exc_info=True)
-        return {
-            "code": 500,
-            "message": str(e),
-            "data": None
-        }
+    }
 
 @app.post("/user/profile")
-async def save_user_profile(data: UserProfileUpdateData):
-    """保存用户资料"""
-    logger.info(f"接收到用户资料更新请求: {data}")
-    try:
-        # 更新用户数据
-        global user_data_test
-        user_data_test.update({
-            "name": data.name,
-            "background": data.background,
-        })
-        logger.info(f"用户资料更新成功: {user_data_test}")
-        return {
-            "code": 200,
-            "message": "资料保存成功",
-            "data": user_data_test
-        }
-    except Exception as e:
-        logger.error(f"保存用户资料失败: {e}", exc_info=True)
-        return {
-            "code": 500,
-            "message": str(e),
-            "data": None
-        }
+async def update_user_info(user_data: UserProfileUpdateData, db: Session = Depends(get_db)):
+    """更新用户信息"""
+    logger.info(f"更新用户信息请求: {user_data}")
+    
+    user = db.query(User).filter(User.id == user_data.id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    
+    user.username = user_data.username
+    user.background = user_data.background
+    db.commit()
+    
+    return {
+        "code": 200,
+        "message": "success",
+    }
 
-# 添加新的API端点
 @app.get("/chats")
-async def get_chats():
-    """获取所有聊天列表"""
-    logger.info("收到获取聊天列表请求")
-    chats = [chat.dict() for chat in manager.chat_rooms.values()]
-    logger.info(f"返回 {len(chats)} 个聊天室信息")
+async def get_chats(user_id: str, db: Session = Depends(get_db)):
+    """获取用户的聊天列表"""
+    chat_members = db.query(ChatMember).filter(ChatMember.user_id == user_id).all()
+    chats = []
+    
+    for member in chat_members:
+        chat = member.chat
+        chats.append({
+            "id": chat.id,
+            "name": chat.name,
+            "type": chat.type,
+            "avatar": chat.avatar,
+            "last_message": chat.last_message,
+            "last_message_time": chat.last_message_time.isoformat() if chat.last_message_time else None
+        })
+    
     return chats
 
-@app.get("/chats/{chat_id}")
-async def get_chat(chat_id: int):
-    """获取特定聊天的详细信息"""
-    chat = await manager.get_chat(chat_id)
+@app.post("/messages")
+async def save_message(chat_id: int, sender_id: str, content: str, db: Session = Depends(get_db)):
+    """保存聊天消息"""
+    message = Message(
+        chat_id=chat_id,
+        sender_id=sender_id,
+        content=content,
+        type="text"
+    )
+    
+    db.add(message)
+    
+    # 更新聊天室最后消息
+    chat = db.query(Chat).filter(Chat.id == chat_id).first()
     if chat:
-        return chat.dict()
-    return {"error": "聊天不存在"}
+        chat.last_message = content
+        chat.last_message_time = datetime.now()
+    
+    db.commit()
+    
+    return {
+        "code": 200,
+        "message": "消息保存成功",
+        "data": {
+            "id": message.id,
+            "content": message.content,
+            "created_at": message.created_at.isoformat()
+        }
+    }
 
-@app.post("/chats")
-async def create_chat(chat_data: dict):
-    """创建新的聊天"""
-    logger.info(f"收到创建聊天请求: {chat_data}")
-    new_chat = await manager.create_chat(chat_data)
-    logger.info(f"聊天创建成功: {new_chat}")
-    return new_chat.dict()
-
-@app.put("/chats/{chat_id}")
-async def update_chat(chat_id: int, chat_data: dict):
-    """更新聊天信息"""
-    await manager.update_chat(chat_id, chat_data)
-    return {"message": "更新成功"}
-
-@app.delete("/chats/{chat_id}")
-async def delete_chat(chat_id: int):
-    """删除聊天"""
-    await manager.delete_chat(chat_id)
-    return {"message": "删除成功"}
+@app.get("/messages/{chat_id}")
+async def get_messages(chat_id: int, limit: int = 50, before_id: int = None, db: Session = Depends(get_db)):
+    """获取聊天记录"""
+    query = db.query(Message).filter(Message.chat_id == chat_id)
+    
+    if before_id:
+        query = query.filter(Message.id < before_id)
+    
+    messages = query.order_by(Message.id.desc()).limit(limit).all()
+    
+    return [
+        {
+            "id": msg.id,
+            "sender": {
+                "id": msg.sender.id,
+                "username": msg.sender.username,
+                "avatar": msg.sender.avatar
+            },
+            "content": msg.content,
+            "type": msg.type,
+            "created_at": msg.created_at.isoformat()
+        }
+        for msg in messages
+    ]
 
 if __name__ == "__main__":
     logger.info("=== FastAPI服务器启动 ===")

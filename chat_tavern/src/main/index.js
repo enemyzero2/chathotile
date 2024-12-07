@@ -8,14 +8,12 @@ const __dirname = path.dirname(__filename);
 
 function createWindow() {
   const win = new BrowserWindow({
-    width: 800,
-    height: 600,
+    width: 1200,
+    height: 800,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
-      webSecurity: false,
-      allowRunningInsecureContent: true,
-      preload: path.join(__dirname, 'preload.js')
+      webSecurity: true
     }
   });
 
@@ -24,7 +22,7 @@ function createWindow() {
       responseHeaders: {
         ...details.responseHeaders,
         'Content-Security-Policy': [
-          "default-src 'self' 'unsafe-inline' 'unsafe-eval' file: data: http: https:;"
+          "default-src 'self' 'unsafe-inline' 'unsafe-eval' ws: wss: http: https: file: data:"
         ]
       }
     });

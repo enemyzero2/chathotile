@@ -6,27 +6,28 @@ const api = axios.create({
 
 // 用户信息接口
 export interface UserInfo {
-  id?: number
-  name: string
-  background?: string
-  avatar?: string
-  createdAt?: string
+  id: string
+  username: string
+  background: string | null
+  avatar: string | null
+  created_at: string
 }
 
 // 用户资料更新接口
 export interface UserProfileUpdateData {
-  name: string
+  id: string
+  username: string
   background: string
 }
 
 export const userApi = {
   // 获取用户信息
-  getUserInfo() {
-    return api.get<{ data: UserInfo }>('/user/info')
+  getUserInfo(id: string) {
+    return api.get<{ data: UserInfo }>(`/user/info?id=${id}`)
   },
 
-  // 保存用户资料
-  saveProfile(data: UserProfileUpdateData) {
+  // 更新用户资料
+  updateProfile(data: UserProfileUpdateData) {
     return api.post<{ message: string }>('/user/profile', data)
   }
 }

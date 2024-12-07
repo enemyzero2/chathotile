@@ -140,6 +140,7 @@ const loading = ref(true)
 const showError = ref(false)
 const deviceId = ref('')
 const wsStore = useWebSocketStore()
+const userId = ref('')
 
 
 const handleNewMessage = (event: CustomEvent) => {
@@ -160,29 +161,35 @@ const handleChatList = (event: CustomEvent<Chat[]>) => {
   chats.value = event.detail
 }
 
+const handleChatMessages = (event: CustomEvent<Message[]>) => {
+  messages.value = event.detail
+}
+
 onMounted(async () => {
   console.log('Chat: 组件挂载')
   try {
+    deviceId.value = getDeviceId()
+    userId.value = deviceId.value
+    console.log('Chat: 生成设备ID', deviceId.value)
+    localStorage.setItem('deviceId', deviceId.value)
+    localStorage.setItem('userId', userId.value)
     console.log('Chat: 开始获取用户信息')
-    const response = await userApi.getUserInfo()
+    const response = await userApi.getUserInfo(userId.value)
     console.log('Chat: 获取到用户信息', response.data.data)
     
-    if(!response.data.data?.name) {
+    if(!response.data.data?.username || response.data.data?.username === 'undefined') {
       console.log('Chat: 未找到用户名，跳转到设置页面')
       router.push('/settings')
       return
     }
-
-    deviceId.value = getDeviceId()
-    console.log('Chat: 生成设备ID', deviceId.value)
     
-    username.value = response.data.data.name
+    username.value = response.data.data.username
     console.log('Chat: 设置用户名', username.value)
     
     // 使用 store 中的 WebSocket
     if (!wsStore.isConnected) {
       console.log('Chat: WebSocket未连接，开始连接')
-      wsStore.connect(deviceId.value)
+      wsStore.connect(deviceId.value, username.value)
     } else {
       console.log('Chat: WebSocket已连接')
     }
@@ -191,7 +198,8 @@ onMounted(async () => {
     window.addEventListener('chat-message', handleNewMessage as EventListener)
     window.addEventListener('chat-list', handleChatList as EventListener)
     window.addEventListener('ws-error', handleWsError as EventListener)
-    
+    wsStore.wsClient.requestChatList()
+    window.addEventListener('chat-messages', handleChatMessages as EventListener)
     loading.value = false
     console.log('Chat: 初始化完成')
   } catch (error) {
@@ -207,6 +215,7 @@ onUnmounted(() => {
   window.removeEventListener('chat-message', handleNewMessage as EventListener)
   window.removeEventListener('chat-list', handleChatList as EventListener)
   window.removeEventListener('ws-error', handleWsError as EventListener)
+  window.removeEventListener('chat-messages', handleChatMessages as EventListener)
 })
 
 const sendMessage = () => {
@@ -225,11 +234,11 @@ const retryEnter = async () => {
   loading.value = true
   
   try {
-    const response = await userApi.getUserInfo()
+    const response = await userApi.getUserInfo(userId.value)
     
 
-    username.value = response.data.data.name
-    wsStore.connect(deviceId.value)
+    username.value = response.data.data.username
+    wsStore.connect(deviceId.value, username.value)
     window.addEventListener('chat-message', handleNewMessage as EventListener)
     loading.value = false
   } catch (error) {
@@ -241,5 +250,8 @@ const retryEnter = async () => {
 
 const selectChat = (chat: Chat) => {
   selectedChat.value = chat
+  messages.value = []
+  wsStore.wsClient.requestChatMessages(chat.id)
+  
 }
-</script> 
+</script>   

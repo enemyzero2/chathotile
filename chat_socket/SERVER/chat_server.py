@@ -154,23 +154,22 @@ class ChatServer:
                     
                 logger.debug(f"收到聊天消息 - 发送者: {username}, 内容: {msg_data}")
                 
-                # 构建新的消息对象
+                # 构建消息对象
                 broadcast_message = {
                     'type': 'message',
-                    'content': msg_data.get('content'),  # 直接获取实际内容
+                    'content': msg_data.get('content'),
                     'sender': username,
                     'chatId': msg_data.get('chatId', 1),
                     'timestamp': datetime.now().isoformat(),
                     'isSelf': False
                 }
                 
-                # 广播给其他用户
-                self._broadcast(broadcast_message, exclude=client_sock)  # 排除发送者
+                # 给其他用户发送 isSelf=False 的消息
+                self._broadcast(broadcast_message, exclude=client_sock)
                 
-                # 给发送者的特殊消息
-                sender_message = broadcast_message.copy()
-                sender_message['isSelf'] = True
-                self._broadcast(sender_message, include=[client_sock])  # 只发给发送者
+                # 给发送者的消息设置 isSelf=True
+                broadcast_message['isSelf'] = True
+                self._broadcast(broadcast_message, include=[client_sock])
                 
             except json.JSONDecodeError as e:
                 logger.error(f"解析消息内容失败: {e}")

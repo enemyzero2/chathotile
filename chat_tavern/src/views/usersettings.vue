@@ -49,8 +49,9 @@ const background = ref('')
 
 const saveProfile = async () => {
   try {
-    await userApi.saveProfile({
-      name: name.value,
+    await userApi.updateProfile({
+      id: localStorage.getItem('userId') || '',
+      username: name.value,
       background: background.value
     })
     // 可以添加成功提示

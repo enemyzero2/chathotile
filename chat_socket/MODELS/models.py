@@ -26,5 +26,6 @@ class UserProfileData(BaseModel):
     createdAt: str
 
 class UserProfileUpdateData(BaseModel):
-    name: str
+    id: str
+    username: str
     background: str
