@@ -8,12 +8,12 @@ export const useWebSocketStore = defineStore('websocket', {
   }),
 
   actions: {
-    connect(deviceId: string) {
-      console.log('WebSocket Store: 尝试连接', { deviceId })
+    connect(deviceId: string, username: string) {
+      console.log('WebSocket Store: 尝试连接', { deviceId, username })
       
       if (!this.isConnected) {
         console.log('WebSocket Store: 建立新连接')
-        this.wsClient.connect(deviceId)
+        this.wsClient.connect(deviceId, username)
         this.isConnected = true
       } else {
         console.log('WebSocket Store: 已存在连接，跳过')

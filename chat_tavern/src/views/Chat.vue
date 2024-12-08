@@ -51,7 +51,7 @@
     </div>
 
     <!-- 聊天界面 -->
-    <div class="flex-1 flex flex-col bg-base-100">
+    <div class="flex-1 flex flex-col bg-base-100 h-screen overflow-hidden">
       <!-- 聊天头部 -->
       <div class="navbar bg-base-200">
         <div v-if="selectedChat">
@@ -64,7 +64,7 @@
       </div>
 
       <!-- 消息列表 -->
-      <div class="card-body flex-1 overflow-y-auto p-6 space-y-4">
+      <div class="flex-1 overflow-y-auto p-6 space-y-4">
         <div
           v-for="message in messages"
           :key="message.timestamp"
@@ -91,6 +91,13 @@
           </button>
           <button class="btn btn-ghost btn-sm">
             <FileIcon :size="20" class="text-base-content" />
+          </button>
+          <button 
+            class="btn btn-ghost btn-sm" 
+            @click="askClaude"
+            :disabled="!selectedChat"
+          >
+            <BrainIcon :size="20" class="text-primary" />
           </button>
         </div>
         
@@ -124,7 +131,8 @@ import {
   MoreVerticalIcon,
   SmileIcon,
   ImageIcon,
-  FileIcon
+  FileIcon,
+  BrainIcon
 } from 'lucide-vue-next'
 import { getDeviceId } from '../utils/deviceId'
 import { useWebSocketStore } from '../stores/websocket'
@@ -219,7 +227,7 @@ onUnmounted(() => {
 })
 
 const sendMessage = () => {
-  if (!newMessage.value.trim() || !selectedChat.value?.id) {
+  if (!newMessage.value.trim() || !selectedChat.value?.id || newMessage.value.trim() === '') {
     console.log('消息为空或未选择聊天室, 发送失败')
     return
   }
@@ -253,5 +261,39 @@ const selectChat = (chat: Chat) => {
   messages.value = []
   wsStore.wsClient.requestChatMessages(chat.id)
   
+}
+
+const askClaude = async () => {
+  if (!selectedChat.value?.id) return
+  
+  try {
+    const messageHistory = messages.value.map(msg => ({
+      content: msg.content,
+      role: 'user'
+    }))
+    
+    const response = await fetch('http://127.0.0.1:8082/api/claude', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        chatId: selectedChat.value.id,
+        messages: messageHistory
+      })
+    })
+    
+    const result = await response.json()
+    
+    if (result.code !== 200) {
+      throw new Error(result.message || '调用 Claude API 失败')
+    }
+    
+    // 让后端通过 WebSocket 广播消息
+    wsStore.wsClient.sendClaudeMessage(result.data.content, selectedChat.value.id)
+    
+  } catch (error) {
+    console.error('请求 Claude 失败:', error)
+  }
 }
 </script>   

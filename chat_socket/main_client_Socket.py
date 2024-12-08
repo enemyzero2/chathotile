@@ -12,10 +12,19 @@ import uvicorn
 import logging
 from sqlalchemy.orm import Session
 from database import SessionLocal, ChatMember, Chat, Message, User
+from openai import OpenAI
 
 from MODELS.models import UserProfileUpdateData
 
 app = FastAPI()
+client = OpenAI(base_url="https://xdaicn.top/v1",api_key="sk-JmFlLWM2smg4WVgXPMsZW38fHn6ai5HrNV0lXLH4gvOhxPZE")
+class openai_message(BaseModel):
+    role: str
+    content: str
+
+class openai_Request(BaseModel):
+    chatId: int
+    messages: List[openai_message]
 
 app.add_middleware(
     CORSMiddleware,
@@ -39,6 +48,7 @@ class ConnectionManager:
         self.active_connections: Dict[str, WebSocket] = {}
         self.chat_clients: Dict[str, ChatClient] = {}
         self.db = SessionLocal()
+        self.loop = asyncio.get_event_loop()
 
     async def send_chat_list(self, username: str):
         """发送聊天列表"""
@@ -67,6 +77,73 @@ class ConnectionManager:
             except Exception as e:
                 logger.error(f"发送聊天列表失败: {e}", exc_info=True)
 
+    async def handle_websocket_message(self, websocket: WebSocket, username: str, id: str, client: ChatClient, data: dict):
+        """统一处理 WebSocket 消息"""
+        try:
+            logger.debug(f"收到用户 {username} 的消息: {data}")
+            
+            # 处理特殊消息类型
+            if data.get('type') == 'request_chat_list':
+                logger.info(f"用户 {username} 请求聊天列表")
+                await self.send_chat_list(username)
+                return
+            elif data.get('type') == 'request_chat_messages':
+                logger.info(f"用户 {username} 请求聊天消息")
+                messages = await self.get_chat_messages(data.get('chatId'), data.get('limit', 50))
+                await websocket.send_json({
+                    'type': 'chat_messages',
+                    'messages': messages
+                })
+                return
+            elif data.get('type') == 'create_chat':
+                logger.info(f"用户 {username} 请求创建新聊天")
+                new_chat = await self.create_chat(data.get('chatData', {}))
+                await self.send_chat_list(username)
+                return
+            elif data.get('type') == 'claude_message':
+                logger.debug(f"收到Claude消息: {data}")
+                message = {
+                    'content': data.get('content', ''),
+                    'chatId': data.get('chatId', 1),
+                    'sender': 'Claude',
+                    'timestamp': datetime.now().isoformat(),
+                    'type': 'message',
+                    'isSelf': False
+                }
+                await self.update_chat_message(message['chatId'], message['content'], "claude")
+                logger.debug(f"消息已处理并更新数据库")
+                await websocket.send_json(message)
+                return
+            # 处理普通聊天消息
+            message = {
+                'content': data.get('content', ''),
+                'chatId': data.get('chatId', 1),
+                'sender': data.get('sender', username),
+                'timestamp': datetime.now().isoformat(),
+                'type': 'message',
+                'isSelf': data.get('isSelf', True)
+            }
+            
+            # 更新聊天室最后消息
+            chat_id = message['chatId']
+            new_message = await self.update_chat_message(
+                chat_id=chat_id,
+                message=message['content'],
+                sender_id=id
+            )
+            
+            if new_message:
+                message['timestamp'] = new_message.created_at.isoformat()
+            
+            # 发送消息到聊天服务器
+            client.send_message(json.dumps(message))
+            # 发送消息到WebSocket客户端
+            await websocket.send_json(message)
+            logger.debug(f"消息已发送到聊天服务器和WebSocket客户端")
+            
+        except Exception as e:
+            logger.error(f"处理消息时出错: {e}", exc_info=True)
+
     async def connect(self, websocket: WebSocket, username: str, id: str):
         """处理新的WebSocket连接"""
         logger.info(f"用户 {username} 正在尝试连接")
@@ -88,54 +165,18 @@ class ConnectionManager:
         # 获取用户的聊天列表并发送
         await self.send_chat_list(username)
         
-        # 创建ChatClient实例
+        # 创建ChatClient实例并设置消息回调
         client = ChatClient(host="127.0.0.1", port=8888)
-        logger.info(f"为用户 {username} 创建ChatClient实例")
         
-        async def message_handler(message: dict):
-            try:
-                logger.debug(f"处理来自用户 {username} 的消息: {message}")
-                
-                if username in self.active_connections:
-                    ws = self.active_connections[username]
-                    if message.get('type') == 'system':
-                        ws_message = {
-                            'type': 'system',
-                            'content': message.get('content', ''),
-                            'timestamp': datetime.now().isoformat()
-                        }
-                    else:
-                        content = message.get('content', '{}')
-                        if isinstance(content, str):
-                            try:
-                                msg_data = json.loads(content)
-                            except json.JSONDecodeError:
-                                msg_data = {'content': content}
-                        else:
-                            msg_data = content
-                        
-                        chat_id = message.get('chatId') or msg_data.get('chatId')
-                        
-                        await self.update_chat_message(chat_id, msg_data.get('content', ''))
-                        
-                        ws_message = {
-                            'type': 'message',
-                            'content': message.get('content', ''),
-                            'sender': message.get('sender', username),
-                            'timestamp': datetime.now().isoformat(),
-                            'chatId': chat_id,
-                            'isSelf': message.get('isSelf', False)
-                        }
-                    
-                    logger.debug(f"消息处理完成，发送响应: {ws_message}")
-                    await ws.send_json(ws_message)
-                    
-            except Exception as e:
-                logger.error(f"处理消息时出错: {e}", exc_info=True)
-                logger.error(f"原始消息内容: {message}")
-
-        client.set_message_callback(message_handler)
-        logger.info(f"用户 {username} 的消息处理器设置完成")
+        # 使用同步回调函数
+        def message_callback(msg):
+            asyncio.run_coroutine_threadsafe(
+                self.handle_server_message(websocket, msg),
+                self.loop
+            )
+        
+        client.set_message_callback(message_callback)
+        logger.info(f"为用户 {username} 创建ChatClient实例")
         
         # 连接到聊天服务器
         if client.connect(username):
@@ -144,6 +185,16 @@ class ConnectionManager:
             return client
         logger.error(f"用户 {username} 连接到聊天服务器失败")
         return None
+
+    async def handle_server_message(self, websocket: WebSocket, message_str: str):
+        """处理从聊天服务器接收到的消息"""
+        try:
+            message = json.loads(message_str)
+            logger.debug(f"从服务器接收到消息: {message}")
+            await websocket.send_json(message)
+            logger.debug(f"消息已转发到WebSocket客户端")
+        except Exception as e:
+            logger.error(f"处理服务器消息时出错: {e}", exc_info=True)
 
     async def disconnect(self, username: str):
         """处理WebSocket断开连接"""
@@ -248,18 +299,34 @@ class ConnectionManager:
             logger.error(f"删除聊天失败: {e}")
             self.db.rollback()
 
-    async def update_chat_message(self, chat_id: int, message: str):
-        """更新聊天的最后消息"""
+    async def update_chat_message(self, chat_id: int, message: str, sender_id: str):
+        """添加新消息到数据库并更新聊天的最后消息"""
         try:
+            # 创建新的消息记录
+            new_message = Message(
+                chat_id=chat_id,
+                sender_id=sender_id,
+                content=message,
+                type="text",
+                created_at=datetime.now()
+            )
+            self.db.add(new_message)
+            
+            # 更新聊天的最后消息
             chat = self.db.query(Chat).filter(Chat.id == chat_id).first()
             if chat:
                 chat.last_message = message
-                chat.last_message_time = datetime.now()
-                self.db.commit()
-                logger.debug(f"已更新聊天 {chat_id} 的最后消息")
+                chat.last_message_time = new_message.created_at
+            
+            self.db.commit()
+            logger.debug(f"已添加新消息并更新聊天 {chat_id} 的最后消息")
+            
+            return new_message
+            
         except Exception as e:
-            logger.error(f"更新聊天消息失败: {e}")
+            logger.error(f"添加消息失败: {e}")
             self.db.rollback()
+            return None
 
     async def get_chat_messages(self, chat_id: int, limit: int = 50) -> list:
         """获取聊天消息历史"""
@@ -292,10 +359,10 @@ manager = ConnectionManager()
 
 @app.websocket("/ws/{id}/{username}")
 async def websocket_endpoint(websocket: WebSocket, id: str):
-    # 获取username by database
     username = manager.db.query(User).filter(User.id == id).first().username
     logger.info(f"收到来自用户 {username} 的WebSocket连接请求")
     client = None
+    
     try:
         client = await manager.connect(websocket, username, id)
         if not client:
@@ -303,51 +370,10 @@ async def websocket_endpoint(websocket: WebSocket, id: str):
             await websocket.close()
             return
         
-        logger.info(f"用户 {username} 连接成功，发送聊天列表")
-        await manager.send_chat_list(username)
-        
         while True:
             try:
                 data = await websocket.receive_json()
-                logger.debug(f"收到用户 {username} 的消息: {data}")
-                
-                if data.get('type') == 'request_chat_list':
-                    logger.info(f"用户 {username} 请求聊天列表")
-                    await manager.send_chat_list(username)
-                    continue
-                elif data.get('type') == 'request_chat_messages':
-                    logger.info(f"用户 {username} 请求聊天消息")
-                    messages = await manager.get_chat_messages(data.get('chatId'), data.get('limit', 50))
-                    await websocket.send_json({
-                        'type': 'chat_messages',
-                        'messages': messages
-                    })
-                    continue
-                elif data.get('type') == 'create_chat':
-                    logger.info(f"用户 {username} 请求创建新聊天")
-                    new_chat = await manager.create_chat(data.get('chatData', {}))
-                    await manager.send_chat_list(username)
-                    continue
-                
-                # 处理普通聊天消息
-                message = {
-                    'content': data.get('content', ''),
-                    'chatId': data.get('chatId', 1),
-                    'sender': username,
-                    'timestamp': datetime.now().isoformat(),
-                    'type': 'message',
-                    'isSelf': True
-                }
-                logger.debug(f"处理用户 {username} 的聊天消息: {message}")
-                
-                # 更新聊天室最后消息
-                chat_id = message['chatId']
-                # 直接更新数据库中的最后消息
-                await manager.update_chat_message(chat_id, message['content'])
-                
-                # 发送消息到聊天服务器
-                client.send_message(json.dumps(message))
-                logger.debug(f"消息已发送到聊天服务器")
+                await manager.handle_websocket_message(websocket, username, id, client, data)
                 
             except WebSocketDisconnect:
                 logger.info(f"客户端 {username} 断开连接")
@@ -484,6 +510,34 @@ async def get_messages(chat_id: int, limit: int = 50, before_id: int = None, db:
         for msg in messages
     ]
 
+@app.post("/api/claude")
+async def claude_api(request: openai_Request):
+    try:
+        message_history = []
+        for message in request.messages[-10:]:
+            message_history.append(openai_message(role=message.role, content=message.content))
+            
+        response = client.chat.completions.create(
+            model="claude-3-5-sonnet-20241022",
+            messages=message_history,
+            stream=False,
+            max_tokens=1024
+        )
+        
+        return {
+            "code": 200,
+            "message": "success",
+            "data": {
+                "content": response.choices[0].message.content
+            }
+        }
+    except Exception as e:
+        logger.error(f"Claude API 请求失败: {e}", exc_info=True)
+        return {
+            "code": 500,
+            "message": str(e),
+        }
+        
 if __name__ == "__main__":
     logger.info("=== FastAPI服务器启动 ===")
     import asyncio

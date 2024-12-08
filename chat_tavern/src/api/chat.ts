@@ -98,11 +98,21 @@ export class WebSocketClient {
   }
   
   sendMessage(content: string, chatId: number) {
-    if (this.ws?.readyState === WebSocket.OPEN) {
+    if (this.ws?.readyState === WebSocket.OPEN && content.trim() !== '') {
       const message = {
         type: 'message',
         content,
-        chatId
+        chatId,
+      }
+      this.ws.send(JSON.stringify(message))
+    }
+  }
+  sendClaudeMessage(content: string, chatId: number) {
+    if (this.ws?.readyState === WebSocket.OPEN && content.trim() !== '') {
+      const message = {
+        type: 'claude_message',
+        content,
+        chatId,
       }
       this.ws.send(JSON.stringify(message))
     }
