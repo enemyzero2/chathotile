@@ -14,7 +14,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class ChatClient:
-    def __init__(self, host: str = "127.0.0.1", port: int = 8888):
+    def __init__(self, host: str = "10.129.169.123", port: int = 8888):
         logger.info(f"初始化ChatClient - 主机: {host}, 端口: {port}")
         self.host = host
         self.port = port

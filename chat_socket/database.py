@@ -6,7 +6,7 @@ from datetime import datetime
 # 数据库连接配置
 #DATABASE_URL = "postgresql://username:password@localhost:5432/chatdb"
 # 或者使用 MySQL
-DATABASE_URL = "mysql+pymysql://root:wdmzj67294381@localhost:3307/chatdb"
+DATABASE_URL = "mysql+pymysql://root:wdmzj67294381@10.129.169.123:3307/chatdb"
 
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

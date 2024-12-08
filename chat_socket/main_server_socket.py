@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 def main():
     logger.info("正在初始化聊天服务器...")
-    chat_server = ChatServer(host="127.0.0.1", port=8888)
+    chat_server = ChatServer(host="10.129.169.123", port=8888)
     
     try:
         logger.info("正在启动聊天服务器...")

@@ -13,7 +13,7 @@ import logging
 from sqlalchemy.orm import Session
 from database import SessionLocal, ChatMember, Chat, Message, User
 from openai import OpenAI
-
+from claude_data import system_message_rp
 from MODELS.models import UserProfileUpdateData
 
 app = FastAPI()
@@ -166,7 +166,7 @@ class ConnectionManager:
         await self.send_chat_list(username)
         
         # 创建ChatClient实例并设置消息回调
-        client = ChatClient(host="127.0.0.1", port=8888)
+        client = ChatClient(host="10.129.169.123", port=8888)
         
         # 使用同步回调函数
         def message_callback(msg):
@@ -514,6 +514,7 @@ async def get_messages(chat_id: int, limit: int = 50, before_id: int = None, db:
 async def claude_api(request: openai_Request):
     try:
         message_history = []
+        message_history.append(system_message_rp)
         for message in request.messages[-10:]:
             message_history.append(openai_message(role=message.role, content=message.content))
             
